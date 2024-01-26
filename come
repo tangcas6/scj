@@ -1,0 +1,117 @@
+function createNewSheet(sheetName) {
+  var ss = SpreadsheetApp.openByUrl('https://docs.google.com/spreadsheets/d/15836pzex36PerbA4T2bx32k7xmzN Q/edit#gid=7509919');
+  var newSheet = ss.insertSheet(sheetName);
+  return newSheet;
+}
+
+function doPost(e) {
+  var contents = JSON.parse(e.postData.contents);
+  var update = contents.message || contents.edited_message;
+  var sheetName = 'feedback_' + update.chat.id;
+
+  if (update && update.text) {
+    var text = update.text;
+    var chatId = update.chat.id;
+    var user = update.from.first_name;
+
+    if (text.startsWith('/submit ')) {
+      var messageText = text.slice(8);
+      var timestamp = new Date().toLocaleString();
+      var sheet = getSheetByNameOrCreateNew(sheetName);
+      
+      sheet.appendRow([timestamp, chatId, user, messageText]);
+      
+      sendTelegramMessage(chatId, '蒙福了！感谢您的反馈！已成功提交！', null);
+
+
+    
+    } else if (text === '/feedback') {
+      var sheet = getSheetByName(sheetName);
+      var data = sheet.getDataRange().getValues();
+      var feedback = '';
+      
+      for (var i = 1; i < data.length; i++) {
+        var row = data[i];
+        feedback += '<b>' + row[0] + '</b>\n';
+        feedback += '<i>用户：</i> ' + row[2] + '\n';
+        feedback += '<i>反馈：</i> ' + row[3] + '\n\n';
+      }
+      
+      sendTelegramMessage(chatId, feedback || '目前没有任何反馈！', {
+        inline_keyboard: [[{ text: '反馈汇总情况', callback_data: 'submit_feedback' }]]
+      });
+    }
+  }
+}
+
+function getSheetByName(sheetName) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  return ss.getSheetByName(sheetName);
+}
+
+function getSheetByNameOrCreateNew(sheetName) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(sheetName);
+  
+  if (sheet == null) {
+    sheet = ss.insertSheet(sheetName);
+    sheet.appendRow(['时间', 'Chat ID', '用户', '反馈']);
+  }
+  
+  return sheet;
+}
+//定期删除数据
+function deleteOldData() {
+  var daysToKeep = 7;
+  var today = new Date();
+  var sheets = SpreadsheetApp.getActiveSpreadsheet().getSheets();
+  
+  for (var i = 0; i < sheets.length; i++) {
+    var sheet = sheets[i];
+    var data = sheet.getDataRange().getValues();
+    var headers = data.shift();
+    var columnIndex = headers.indexOf("时间");
+    
+    if (columnIndex !== -1) {
+      var rowsToDelete = [];
+      var now = today.getTime();
+      
+      for (var j = 0; j < data.length; j++) {
+        var row = data[j];
+        var timestamp = new Date(row[columnIndex]).getTime();
+        var daysOld = Math.floor((now - timestamp) / 1000 / 60 / 60 / 24);
+        
+        if (daysOld >= daysToKeep) {
+          rowsToDelete.push(j + 1);
+        }
+      }
+      
+      if (rowsToDelete.length > 0) {
+        sheet.deleteRows(rowsToDelete);
+      }
+    }
+  }
+}
+
+function sendTelegramMessage(chatId, text, options) {
+  var token = '6285611682:AAHAG8XIyB3RY 1CbGtPSnwy2tI';
+  var url = 'https://api.telegram.org/bot' + token + '/sendMessage';
+  
+  var payload = {
+    'chat_id': chatId,
+    'text': text,
+    'parse_mode': 'HTML'
+  };
+  
+  if (options) {
+    payload.reply_markup = JSON.stringify(options);
+  }
+  
+  var options = {
+    'method': 'post',
+    'contentType': 'application/json',
+    'payload': JSON.stringify(payload)
+  };
+  
+  UrlFetchApp.fetch(url, options);
+}
